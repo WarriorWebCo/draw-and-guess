@@ -68,6 +68,8 @@
       const canvasRef = useRef(null);
       const pusherRef = useRef(null);
       const channelRef = useRef(null);
+      const isDrawerRef = useRef(false);
+      const playerNameRef = useRef('');
       
       const [isDrawing, setIsDrawing] = useState(false);
       const [currentColor, setCurrentColor] = useState('#000000');
@@ -85,6 +87,16 @@
       const [isEraser, setIsEraser] = useState(false);
       const [lobbyPlayers, setLobbyPlayers] = useState([]);
       const [isHost, setIsHost] = useState(false);
+
+      // Keep refs in sync with state
+      useEffect(() => {
+        isDrawerRef.current = isDrawer;
+        console.log('isDrawer updated to:', isDrawer);
+      }, [isDrawer]);
+      
+      useEffect(() => {
+        playerNameRef.current = playerName;
+      }, [playerName]);
 
       // Initialize Pusher
       useEffect(() => {
@@ -104,7 +116,8 @@
         // Listen for drawing events
         channelRef.current.bind('drawing', function(data) {
           console.log('Received drawing event:', data);
-          handleRemoteDrawing(data);
+          // Use refs to get current values
+          handleRemoteDrawing(data, isDrawerRef.current, playerNameRef.current);
         });
 
         // Listen for guess events
@@ -129,11 +142,24 @@
         // Listen for role switch events
         channelRef.current.bind('switch-roles', function(data) {
           console.log('Received role switch:', data);
-          setIsDrawer(data.newDrawer === playerName);
+          const wasDrawer = isDrawer;
+          const willBeDrawer = data.newDrawer === playerName;
+          
+          setIsDrawer(willBeDrawer);
           setCurrentWord(data.newWord);
-          clearCanvas();
           setRoundTime(60);
           setMessages([]);
+          
+          // Clear and reinitialize canvas after role switch
+          setTimeout(() => {
+            const canvas = canvasRef.current;
+            if (canvas) {
+              const ctx = canvas.getContext('2d');
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              console.log('Canvas cleared for new round. I am drawer:', willBeDrawer);
+            }
+          }, 100);
         });
 
         // Listen for player join events
@@ -261,22 +287,33 @@
         }
       };
 
-      const handleRemoteDrawing = (data) => {
-        if (isDrawer || data.playerName === playerName) return;
+      const handleRemoteDrawing = (data, currentIsDrawer, currentPlayerName) => {
+        console.log('handleRemoteDrawing called:', data.type, 'isDrawer:', currentIsDrawer, 'data.playerName:', data.playerName, 'myName:', currentPlayerName);
+        
+        if (currentIsDrawer || data.playerName === currentPlayerName) {
+          console.log('Ignoring drawing event (I am drawer or it is my own drawing)');
+          return;
+        }
         
         const canvas = canvasRef.current;
-        if (!canvas) return;
+        if (!canvas) {
+          console.log('No canvas ref!');
+          return;
+        }
         
         const ctx = canvas.getContext('2d');
         
         if (data.type === 'clear') {
+          console.log('Clearing canvas remotely');
           ctx.fillStyle = '#FFFFFF';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
         } else if (data.type === 'start') {
+          console.log('Starting path at:', data.x, data.y);
           ctx.beginPath();
           // Scale coordinates based on canvas dimensions
           const scaledX = (data.x / data.canvasWidth) * canvas.width;
           const scaledY = (data.y / data.canvasHeight) * canvas.height;
+          console.log('Scaled to:', scaledX, scaledY, 'canvas:', canvas.width, canvas.height);
           ctx.moveTo(scaledX, scaledY);
         } else if (data.type === 'draw') {
           // Scale coordinates based on canvas dimensions
@@ -287,7 +324,9 @@
           ctx.lineCap = 'round';
           ctx.lineTo(scaledX, scaledY);
           ctx.stroke();
+          console.log('Drew line to:', scaledX, scaledY);
         } else if (data.type === 'stop') {
+          console.log('Stopping path');
           ctx.closePath();
         }
       };
