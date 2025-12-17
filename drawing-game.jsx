@@ -1,0 +1,653 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Camera, Eraser, Trash2, Check, MessageCircle, Palette } from 'lucide-react';
+
+// Word bank for the game
+const WORD_BANK = [
+  'cat', 'house', 'car', 'tree', 'sun', 'moon', 'star', 'flower', 'pizza', 'burger',
+  'phone', 'laptop', 'guitar', 'drum', 'camera', 'book', 'mountain', 'ocean', 'fish',
+  'bird', 'dog', 'bicycle', 'airplane', 'rocket', 'cloud', 'rainbow', 'umbrella',
+  'crown', 'heart', 'diamond', 'key', 'lock', 'glasses', 'hat', 'shoe', 'shirt',
+  'pants', 'coffee', 'cake', 'ice cream', 'apple', 'banana', 'strawberry', 'watermelon'
+];
+
+const COLORS = [
+  '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', 
+  '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080'
+];
+
+const DrawingGame = () => {
+  const canvasRef = useRef(null);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [currentColor, setCurrentColor] = useState('#000000');
+  const [brushSize, setBrushSize] = useState(3);
+  const [playerName, setPlayerName] = useState('');
+  const [roomCode, setRoomCode] = useState('');
+  const [isInGame, setIsInGame] = useState(false);
+  const [isDrawer, setIsDrawer] = useState(false);
+  const [currentWord, setCurrentWord] = useState('');
+  const [guess, setGuess] = useState('');
+  const [messages, setMessages] = useState([]);
+  const [score, setScore] = useState({ player1: 0, player2: 0 });
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [gameStarted, setGameStarted] = useState(false);
+  const [roundTime, setRoundTime] = useState(60);
+  const [isEraser, setIsEraser] = useState(false);
+
+  // Canvas drawing logic
+  const startDrawing = (e) => {
+    if (!isDrawer || !gameStarted) return;
+    
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    setIsDrawing(true);
+
+    // In real implementation, broadcast this to other player
+    broadcastDrawing({ type: 'start', x, y });
+  };
+
+  const draw = (e) => {
+    if (!isDrawing || !isDrawer || !gameStarted) return;
+    
+    e.preventDefault();
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.strokeStyle = isEraser ? '#FFFFFF' : currentColor;
+    ctx.lineWidth = isEraser ? brushSize * 3 : brushSize;
+    ctx.lineCap = 'round';
+    ctx.lineTo(x, y);
+    ctx.stroke();
+
+    // In real implementation, broadcast this to other player
+    broadcastDrawing({ type: 'draw', x, y, color: currentColor, size: brushSize, isEraser });
+  };
+
+  const stopDrawing = () => {
+    setIsDrawing(false);
+    broadcastDrawing({ type: 'stop' });
+  };
+
+  const clearCanvas = () => {
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    broadcastDrawing({ type: 'clear' });
+  };
+
+  const broadcastDrawing = (data) => {
+    // This is where you'd send data via WebSocket
+    // For now, we'll use localStorage to simulate real-time sync
+    const drawingData = { ...data, timestamp: Date.now() };
+    window.localStorage.setItem('lastDrawing', JSON.stringify(drawingData));
+  };
+
+  const submitGuess = () => {
+    if (!guess.trim()) return;
+    
+    const isCorrect = guess.toLowerCase().trim() === currentWord.toLowerCase();
+    
+    const newMessage = {
+      player: playerName,
+      text: guess,
+      isCorrect,
+      timestamp: Date.now()
+    };
+    
+    setMessages(prev => [...prev, newMessage]);
+    setGuess('');
+
+    if (isCorrect) {
+      const points = Math.max(10, Math.floor(roundTime / 2));
+      setScore(prev => ({
+        ...prev,
+        [isDrawer ? 'player1' : 'player2']: prev[isDrawer ? 'player1' : 'player2'] + points
+      }));
+      // End round and switch roles
+      setTimeout(() => switchRoles(), 2000);
+    }
+
+    // Broadcast guess
+    window.localStorage.setItem('lastGuess', JSON.stringify(newMessage));
+  };
+
+  const switchRoles = () => {
+    setIsDrawer(!isDrawer);
+    const newWord = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
+    setCurrentWord(newWord);
+    clearCanvas();
+    setRoundTime(60);
+    setMessages([]);
+  };
+
+  const startGame = () => {
+    if (!roomCode || !playerName) return;
+    
+    setIsInGame(true);
+    setGameStarted(true);
+    const isPlayer1 = Math.random() > 0.5;
+    setIsDrawer(isPlayer1);
+    
+    const word = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
+    setCurrentWord(word);
+
+    // Store game state
+    window.localStorage.setItem('gameRoom', JSON.stringify({
+      roomCode,
+      playerName,
+      isDrawer: isPlayer1
+    }));
+  };
+
+  // Timer effect
+  useEffect(() => {
+    if (!gameStarted || roundTime <= 0) return;
+    
+    const timer = setInterval(() => {
+      setRoundTime(prev => {
+        if (prev <= 1) {
+          switchRoles();
+          return 60;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [gameStarted, roundTime]);
+
+  // Initialize canvas
+  useEffect(() => {
+    if (canvasRef.current) {
+      const canvas = canvasRef.current;
+      canvas.width = canvas.offsetWidth;
+      canvas.height = canvas.offsetHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+  }, [isInGame]);
+
+  // Listen for drawing updates from other player
+  useEffect(() => {
+    if (!isInGame || isDrawer) return;
+
+    const checkForUpdates = setInterval(() => {
+      const lastDrawing = window.localStorage.getItem('lastDrawing');
+      if (lastDrawing) {
+        const data = JSON.parse(lastDrawing);
+        // Apply drawing to canvas
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        
+        if (data.type === 'clear') {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        } else if (data.type === 'start') {
+          ctx.beginPath();
+          ctx.moveTo(data.x, data.y);
+        } else if (data.type === 'draw') {
+          ctx.strokeStyle = data.isEraser ? '#FFFFFF' : data.color;
+          ctx.lineWidth = data.isEraser ? data.size * 3 : data.size;
+          ctx.lineCap = 'round';
+          ctx.lineTo(data.x, data.y);
+          ctx.stroke();
+        }
+      }
+    }, 50);
+
+    return () => clearInterval(checkForUpdates);
+  }, [isInGame, isDrawer]);
+
+  if (!isInGame) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '20px',
+        fontFamily: "'Quicksand', sans-serif"
+      }}>
+        <div style={{
+          background: 'white',
+          borderRadius: '24px',
+          padding: '40px',
+          maxWidth: '400px',
+          width: '100%',
+          boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+        }}>
+          <h1 style={{
+            fontSize: '2.5rem',
+            fontWeight: '800',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            WebkitBackgroundClip: 'text',
+            WebkitTextFillColor: 'transparent',
+            marginBottom: '10px',
+            textAlign: 'center'
+          }}>
+            ✏️ Draw & Guess
+          </h1>
+          <p style={{
+            textAlign: 'center',
+            color: '#64748b',
+            marginBottom: '30px',
+            fontSize: '0.95rem'
+          }}>
+            Play with your partner in real-time!
+          </p>
+          
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{
+              display: 'block',
+              marginBottom: '8px',
+              fontWeight: '600',
+              color: '#334155',
+              fontSize: '0.9rem'
+            }}>
+              Your Name
+            </label>
+            <input
+              type="text"
+              value={playerName}
+              onChange={(e) => setPlayerName(e.target.value)}
+              placeholder="Enter your name"
+              style={{
+                width: '100%',
+                padding: '14px',
+                border: '2px solid #e2e8f0',
+                borderRadius: '12px',
+                fontSize: '1rem',
+                outline: 'none',
+                transition: 'all 0.2s',
+                boxSizing: 'border-box'
+              }}
+              onFocus={(e) => e.target.style.borderColor = '#667eea'}
+              onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+            />
+          </div>
+
+          <div style={{ marginBottom: '30px' }}>
+            <label style={{
+              display: 'block',
+              marginBottom: '8px',
+              fontWeight: '600',
+              color: '#334155',
+              fontSize: '0.9rem'
+            }}>
+              Room Code
+            </label>
+            <input
+              type="text"
+              value={roomCode}
+              onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+              placeholder="Create or join room"
+              style={{
+                width: '100%',
+                padding: '14px',
+                border: '2px solid #e2e8f0',
+                borderRadius: '12px',
+                fontSize: '1rem',
+                outline: 'none',
+                transition: 'all 0.2s',
+                textTransform: 'uppercase',
+                boxSizing: 'border-box'
+              }}
+              onFocus={(e) => e.target.style.borderColor = '#667eea'}
+              onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+            />
+            <p style={{
+              fontSize: '0.8rem',
+              color: '#94a3b8',
+              marginTop: '6px',
+              fontStyle: 'italic'
+            }}>
+              Share this code with your partner
+            </p>
+          </div>
+
+          <button
+            onClick={startGame}
+            disabled={!playerName || !roomCode}
+            style={{
+              width: '100%',
+              padding: '16px',
+              background: (!playerName || !roomCode) 
+                ? '#cbd5e1' 
+                : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '12px',
+              fontSize: '1.1rem',
+              fontWeight: '700',
+              cursor: (!playerName || !roomCode) ? 'not-allowed' : 'pointer',
+              transition: 'transform 0.2s',
+              boxShadow: (!playerName || !roomCode) ? 'none' : '0 4px 12px rgba(102, 126, 234, 0.4)'
+            }}
+            onMouseDown={(e) => {
+              if (playerName && roomCode) e.target.style.transform = 'scale(0.98)';
+            }}
+            onMouseUp={(e) => e.target.style.transform = 'scale(1)'}
+            onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+          >
+            Start Game 🎮
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      padding: '10px',
+      fontFamily: "'Quicksand', sans-serif"
+    }}>
+      {/* Header */}
+      <div style={{
+        background: 'white',
+        borderRadius: '16px',
+        padding: '15px 20px',
+        marginBottom: '10px',
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+          <div style={{
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            color: 'white',
+            padding: '8px 16px',
+            borderRadius: '12px',
+            fontWeight: '700',
+            fontSize: '1.2rem'
+          }}>
+            {roundTime}s
+          </div>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Room</div>
+            <div style={{ fontWeight: '700', color: '#334155' }}>{roomCode}</div>
+          </div>
+        </div>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Score</div>
+          <div style={{ fontWeight: '700', color: '#334155' }}>
+            {score.player1} - {score.player2}
+          </div>
+        </div>
+      </div>
+
+      {/* Word display (for drawer only) */}
+      {isDrawer && (
+        <div style={{
+          background: '#fef3c7',
+          border: '2px solid #fbbf24',
+          borderRadius: '16px',
+          padding: '20px',
+          marginBottom: '10px',
+          textAlign: 'center',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{ fontSize: '0.9rem', color: '#92400e', marginBottom: '5px', fontWeight: '600' }}>
+            Draw this word:
+          </div>
+          <div style={{ fontSize: '2rem', fontWeight: '800', color: '#78350f' }}>
+            {currentWord}
+          </div>
+        </div>
+      )}
+
+      {/* Canvas */}
+      <div style={{
+        background: 'white',
+        borderRadius: '16px',
+        padding: '10px',
+        marginBottom: '10px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+      }}>
+        <canvas
+          ref={canvasRef}
+          onMouseDown={startDrawing}
+          onMouseMove={draw}
+          onMouseUp={stopDrawing}
+          onMouseLeave={stopDrawing}
+          onTouchStart={startDrawing}
+          onTouchMove={draw}
+          onTouchEnd={stopDrawing}
+          style={{
+            width: '100%',
+            height: '400px',
+            cursor: isDrawer ? 'crosshair' : 'not-allowed',
+            borderRadius: '12px',
+            touchAction: 'none'
+          }}
+        />
+      </div>
+
+      {/* Drawing tools (for drawer only) */}
+      {isDrawer && (
+        <div style={{
+          background: 'white',
+          borderRadius: '16px',
+          padding: '15px',
+          marginBottom: '10px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap' }}>
+            <button
+              onClick={() => setShowColorPicker(!showColorPicker)}
+              style={{
+                padding: '12px',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: '600'
+              }}
+            >
+              <Palette size={20} /> Color
+            </button>
+            <button
+              onClick={() => setIsEraser(!isEraser)}
+              style={{
+                padding: '12px',
+                background: isEraser ? '#ef4444' : '#f1f5f9',
+                color: isEraser ? 'white' : '#334155',
+                border: 'none',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: '600'
+              }}
+            >
+              <Eraser size={20} /> {isEraser ? 'Erasing' : 'Eraser'}
+            </button>
+            <button
+              onClick={clearCanvas}
+              style={{
+                padding: '12px',
+                background: '#f1f5f9',
+                color: '#334155',
+                border: 'none',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontWeight: '600'
+              }}
+            >
+              <Trash2 size={20} /> Clear
+            </button>
+          </div>
+
+          {showColorPicker && (
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, 1fr)',
+              gap: '10px',
+              marginTop: '10px'
+            }}>
+              {COLORS.map(color => (
+                <button
+                  key={color}
+                  onClick={() => {
+                    setCurrentColor(color);
+                    setIsEraser(false);
+                    setShowColorPicker(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    aspectRatio: '1',
+                    background: color,
+                    border: currentColor === color ? '3px solid #667eea' : '2px solid #e2e8f0',
+                    borderRadius: '12px',
+                    cursor: 'pointer',
+                    transition: 'transform 0.2s'
+                  }}
+                  onMouseDown={(e) => e.target.style.transform = 'scale(0.9)'}
+                  onMouseUp={(e) => e.target.style.transform = 'scale(1)'}
+                  onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+                />
+              ))}
+            </div>
+          )}
+
+          <div style={{ marginTop: '15px' }}>
+            <label style={{
+              display: 'block',
+              marginBottom: '8px',
+              fontWeight: '600',
+              color: '#334155',
+              fontSize: '0.9rem'
+            }}>
+              Brush Size: {brushSize}px
+            </label>
+            <input
+              type="range"
+              min="1"
+              max="20"
+              value={brushSize}
+              onChange={(e) => setBrushSize(Number(e.target.value))}
+              style={{
+                width: '100%',
+                accentColor: '#667eea'
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Guessing interface (for guesser only) */}
+      {!isDrawer && (
+        <div style={{
+          background: 'white',
+          borderRadius: '16px',
+          padding: '15px',
+          marginBottom: '10px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+        }}>
+          <div style={{ marginBottom: '15px' }}>
+            <div style={{
+              maxHeight: '120px',
+              overflowY: 'auto',
+              marginBottom: '10px',
+              padding: '10px',
+              background: '#f8fafc',
+              borderRadius: '12px'
+            }}>
+              {messages.length === 0 ? (
+                <p style={{ color: '#94a3b8', fontSize: '0.9rem', textAlign: 'center' }}>
+                  Your guesses will appear here...
+                </p>
+              ) : (
+                messages.map((msg, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: '8px 12px',
+                      marginBottom: '6px',
+                      background: msg.isCorrect ? '#dcfce7' : 'white',
+                      border: msg.isCorrect ? '2px solid #22c55e' : '1px solid #e2e8f0',
+                      borderRadius: '8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+                    {msg.isCorrect && <Check size={16} style={{ color: '#22c55e' }} />}
+                    <span style={{
+                      fontWeight: '600',
+                      color: '#334155',
+                      fontSize: '0.85rem'
+                    }}>
+                      {msg.text}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <input
+              type="text"
+              value={guess}
+              onChange={(e) => setGuess(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && submitGuess()}
+              placeholder="Type your guess..."
+              style={{
+                flex: 1,
+                padding: '14px',
+                border: '2px solid #e2e8f0',
+                borderRadius: '12px',
+                fontSize: '1rem',
+                outline: 'none',
+                boxSizing: 'border-box'
+              }}
+              onFocus={(e) => e.target.style.borderColor = '#667eea'}
+              onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+            />
+            <button
+              onClick={submitGuess}
+              style={{
+                padding: '14px 20px',
+                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                fontWeight: '700',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <MessageCircle size={20} /> Guess
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default DrawingGame;
