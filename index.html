@@ -106,7 +106,9 @@
 
     const COLORS = [
       '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', 
-      '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080'
+      '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080',
+      '#FFB6C1', '#90EE90', '#87CEEB', '#DDA0DD', '#F0E68C',
+      '#FF6347', '#4169E1', '#32CD32', '#FF1493', '#8B4513'
     ];
 
     const DrawingGame = () => {
@@ -115,6 +117,55 @@
       const channelRef = useRef(null);
       const isDrawerRef = useRef(false);
       const playerNameRef = useRef('');
+      
+      // Sound effects using Web Audio API
+      const playSound = (type) => {
+        if (!soundEnabled) return;
+        
+        try {
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const oscillator = audioContext.createOscillator();
+          const gainNode = audioContext.createGain();
+          
+          oscillator.connect(gainNode);
+          gainNode.connect(audioContext.destination);
+          
+          if (type === 'correct') {
+            // Happy ascending notes
+            oscillator.frequency.setValueAtTime(523.25, audioContext.currentTime); // C5
+            oscillator.frequency.setValueAtTime(659.25, audioContext.currentTime + 0.1); // E5
+            oscillator.frequency.setValueAtTime(783.99, audioContext.currentTime + 0.2); // G5
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.4);
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.4);
+          } else if (type === 'draw') {
+            // Quiet drawing sound
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(100, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.03, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.05);
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.05);
+          } else if (type === 'tick') {
+            // Timer tick
+            oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.1, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.1);
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.1);
+          } else if (type === 'hint') {
+            // Gentle hint notification
+            oscillator.frequency.setValueAtTime(440, audioContext.currentTime);
+            gainNode.gain.setValueAtTime(0.2, audioContext.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+            oscillator.start(audioContext.currentTime);
+            oscillator.stop(audioContext.currentTime + 0.3);
+          }
+        } catch (err) {
+          console.log('Sound playback error:', err);
+        }
+      };
       
       const [isDrawing, setIsDrawing] = useState(false);
       const [currentColor, setCurrentColor] = useState('#000000');
@@ -138,6 +189,13 @@
       const [selectedCategories, setSelectedCategories] = useState(['animals', 'food', 'objects']);
       const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
       const [usedWords, setUsedWords] = useState([]);
+      const [maxRounds, setMaxRounds] = useState(10);
+      const [currentRound, setCurrentRound] = useState(1);
+      const [showHint, setShowHint] = useState(false);
+      const [drawingHistory, setDrawingHistory] = useState([]);
+      const [chatMessages, setChatMessages] = useState([]);
+      const [chatInput, setChatInput] = useState('');
+      const [soundEnabled, setSoundEnabled] = useState(true);
 
       // Keep refs in sync with state
       useEffect(() => {
@@ -478,6 +536,11 @@
         ctx.lineCap = 'round';
         ctx.lineTo(x, y);
         ctx.stroke();
+        
+        // Play quiet drawing sound occasionally
+        if (Math.random() < 0.1) {
+          playSound('draw');
+        }
 
         broadcastEvent('drawing', { 
           type: 'draw', 
@@ -536,6 +599,8 @@
         });
 
         if (isCorrect) {
+          playSound('correct');
+          
           setScore(prev => ({
             ...prev,
             [playerName]: (prev[playerName] || 0) + points
@@ -549,11 +614,23 @@
           setTimeout(() => {
             setShowLeaderboard(true);
             
-            // After showing leaderboard, switch roles and continue
+            // Check if game is over
+            const isGameOver = currentRound >= maxRounds;
+            
+            // After showing leaderboard
             setTimeout(() => {
               setShowLeaderboard(false);
               setLastRoundWinner(null);
-              switchRoles();
+              
+              if (isGameOver) {
+                // Show final winner screen
+                setGamePhase('gameOver');
+              } else {
+                // Continue to next round
+                setCurrentRound(prev => prev + 1);
+                setShowHint(false);
+                switchRoles();
+              }
             }, 4000);
           }, 2000);
         }
@@ -570,6 +647,7 @@
         
         setIsDrawer(nextDrawer === playerName);
         setCurrentWord(newWord);
+        setShowHint(false);
         clearCanvas();
         setRoundTime(60);
         setMessages([]);
@@ -577,7 +655,8 @@
         // Broadcast role switch
         broadcastEvent('switch-roles', {
           newDrawer: nextDrawer,
-          newWord
+          newWord,
+          currentRound
         });
       };
 
@@ -648,6 +727,17 @@
         
         const timer = setInterval(() => {
           setRoundTime(prev => {
+            // Show hint at 30 seconds
+            if (prev === 30 && !isDrawer) {
+              setShowHint(true);
+              playSound('hint');
+            }
+            
+            // Timer tick sound for last 10 seconds
+            if (prev <= 10 && prev > 0) {
+              playSound('tick');
+            }
+            
             if (prev <= 1) {
               switchRoles();
               return 60;
@@ -802,6 +892,134 @@
                 }}
               >
                 Join Lobby 🚪
+              </button>
+            </div>
+          </div>
+        );
+      }
+
+      // Game Over Screen
+      if (gamePhase === 'gameOver') {
+        const sortedPlayers = Object.entries(score).sort(([, a], [, b]) => b - a);
+        const winner = sortedPlayers[0];
+        
+        return (
+          <div style={{
+            minHeight: '100vh',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            fontFamily: "'Quicksand', sans-serif"
+          }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '24px',
+              padding: '40px',
+              maxWidth: '500px',
+              width: '100%',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              textAlign: 'center'
+            }}>
+              <div style={{ fontSize: '5rem', marginBottom: '20px' }}>
+                🏆
+              </div>
+              <h1 style={{
+                fontSize: '2.5rem',
+                fontWeight: '800',
+                marginBottom: '10px',
+                background: 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent'
+              }}>
+                Game Over!
+              </h1>
+              <h2 style={{
+                fontSize: '1.8rem',
+                fontWeight: '700',
+                color: '#334155',
+                marginBottom: '30px'
+              }}>
+                {winner[0]} Wins!
+              </h2>
+              
+              <div style={{
+                background: '#f8fafc',
+                borderRadius: '16px',
+                padding: '20px',
+                marginBottom: '30px'
+              }}>
+                <h3 style={{
+                  fontSize: '1.2rem',
+                  fontWeight: '700',
+                  color: '#334155',
+                  marginBottom: '15px'
+                }}>
+                  Final Scores
+                </h3>
+                {sortedPlayers.map(([player, points], index) => (
+                  <div
+                    key={player}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '12px',
+                      marginBottom: '8px',
+                      background: index === 0 ? '#fef3c7' : 'white',
+                      borderRadius: '12px',
+                      border: index === 0 ? '2px solid #fbbf24' : '1px solid #e2e8f0'
+                    }}
+                  >
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px'
+                    }}>
+                      <span style={{ fontSize: '1.5rem' }}>
+                        {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : ''}
+                      </span>
+                      <span style={{
+                        fontSize: '1.1rem',
+                        fontWeight: '700',
+                        color: '#334155'
+                      }}>
+                        {player}
+                      </span>
+                    </div>
+                    <span style={{
+                      fontSize: '1.3rem',
+                      fontWeight: '800',
+                      color: index === 0 ? '#f59e0b' : '#334155'
+                    }}>
+                      {points}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              <button
+                onClick={() => {
+                  setGamePhase('lobby');
+                  setCurrentRound(1);
+                  setUsedWords([]);
+                  setScore({});
+                }}
+                style={{
+                  width: '100%',
+                  padding: '16px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '12px',
+                  fontSize: '1.1rem',
+                  fontWeight: '700',
+                  cursor: 'pointer',
+                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.4)'
+                }}
+              >
+                Play Again
               </button>
             </div>
           </div>
@@ -968,6 +1186,43 @@
                     }}>
                       ⚙️ Game Settings
                     </h3>
+                    
+                    {/* Difficulty Selection */}
+                    <div style={{ marginBottom: '20px' }}>
+                      <label style={{
+                        display: 'block',
+                        fontSize: '0.9rem',
+                        fontWeight: '600',
+                        color: '#334155',
+                        marginBottom: '10px'
+                      }}>
+                        Number of Rounds:
+                      </label>
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                        {[5, 10, 15, 20].map(rounds => (
+                          <button
+                            key={rounds}
+                            onClick={() => setMaxRounds(rounds)}
+                            style={{
+                              flex: 1,
+                              padding: '12px',
+                              background: maxRounds === rounds 
+                                ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                                : 'white',
+                              color: maxRounds === rounds ? 'white' : '#334155',
+                              border: maxRounds === rounds ? 'none' : '2px solid #e2e8f0',
+                              borderRadius: '12px',
+                              fontSize: '1rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            {rounds}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     
                     {/* Difficulty Selection */}
                     <div style={{ marginBottom: '20px' }}>
@@ -1310,26 +1565,45 @@
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
               <div style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                background: roundTime <= 10 
+                  ? 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'
+                  : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                 color: 'white',
                 padding: '8px 16px',
                 borderRadius: '12px',
                 fontWeight: '700',
-                fontSize: '1.2rem'
+                fontSize: '1.2rem',
+                animation: roundTime <= 10 ? 'pulse 1s ease-in-out infinite' : 'none'
               }}>
                 {roundTime}s
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Room: {roomCode}</div>
+                <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                  Round {currentRound}/{maxRounds}
+                </div>
                 <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                  {lobbyPlayers.length} player{lobbyPlayers.length !== 1 ? 's' : ''}
+                  Room: {roomCode}
                 </div>
               </div>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Your Score</div>
-              <div style={{ fontWeight: '700', color: '#334155' }}>
-                {score[playerName] || 0}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <button
+                onClick={() => setSoundEnabled(!soundEnabled)}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  fontSize: '1.5rem',
+                  cursor: 'pointer',
+                  opacity: soundEnabled ? 1 : 0.3
+                }}
+              >
+                {soundEnabled ? '🔊' : '🔇'}
+              </button>
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Your Score</div>
+                <div style={{ fontWeight: '700', color: '#334155' }}>
+                  {score[playerName] || 0}
+                </div>
               </div>
             </div>
           </div>
@@ -1365,9 +1639,22 @@
               textAlign: 'center',
               boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
             }}>
-              <div style={{ fontSize: '0.9rem', color: '#1e40af', fontWeight: '600' }}>
-                🤔 Guess what's being drawn! ({currentWord.length} letters)
+              <div style={{ fontSize: '0.9rem', color: '#1e40af', fontWeight: '600', marginBottom: '5px' }}>
+                🤔 Guess what's being drawn!
               </div>
+              <div style={{ fontSize: '1.5rem', fontWeight: '700', color: '#1e40af', letterSpacing: '4px' }}>
+                {showHint 
+                  ? currentWord.split('').map((letter, i) => 
+                      i === 0 || i === Math.floor(currentWord.length / 2) ? letter : '_'
+                    ).join(' ')
+                  : '_ '.repeat(currentWord.length).trim()
+                }
+              </div>
+              {showHint && (
+                <div style={{ fontSize: '0.75rem', color: '#1e40af', marginTop: '5px', fontStyle: 'italic' }}>
+                  💡 Hint revealed!
+                </div>
+              )}
             </div>
           )}
 
@@ -1479,15 +1766,17 @@
                         setCurrentColor(color);
                         setIsEraser(false);
                         setShowColorPicker(false);
+                        playSound('draw');
                       }}
                       style={{
                         width: '100%',
                         aspectRatio: '1',
                         background: color,
-                        border: currentColor === color ? '3px solid #667eea' : '2px solid #e2e8f0',
+                        border: currentColor === color ? '3px solid #667eea' : color === '#FFFFFF' ? '2px solid #e2e8f0' : 'none',
                         borderRadius: '12px',
                         cursor: 'pointer',
-                        transition: 'transform 0.2s'
+                        transition: 'transform 0.2s',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)'
                       }}
                     />
                   ))}
