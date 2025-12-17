@@ -138,27 +138,25 @@
             setMessages(prev => [...prev, newMessage]);
           }
           
-          // Update score if someone guessed correctly
-          if (data.isCorrect) {
+          // Update score ONLY if someone ELSE guessed correctly (not me)
+          if (data.isCorrect && data.playerName !== playerName) {
             setScore(prev => ({
               ...prev,
               [data.playerName]: (prev[data.playerName] || 0) + data.points
             }));
             
-            // Show celebration for everyone
-            if (data.playerName !== playerName) {
-              setLastRoundWinner(data.playerName);
-              setLastRoundPoints(data.points);
+            // Show celebration for everyone when someone else guesses
+            setLastRoundWinner(data.playerName);
+            setLastRoundPoints(data.points);
+            
+            setTimeout(() => {
+              setShowLeaderboard(true);
               
               setTimeout(() => {
-                setShowLeaderboard(true);
-                
-                setTimeout(() => {
-                  setShowLeaderboard(false);
-                  setLastRoundWinner(null);
-                }, 4000);
-              }, 2000);
-            }
+                setShowLeaderboard(false);
+                setLastRoundWinner(null);
+              }, 4000);
+            }, 2000);
           }
         });
 
