@@ -13,9 +13,6 @@
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
-  <!-- Lucide Icons -->
-  <script src="https://unpkg.com/lucide@latest"></script>
-  
   <style>
     * {
       margin: 0;
@@ -36,7 +33,13 @@
 
   <script type="text/babel">
     const { useState, useRef, useEffect } = React;
-    const { Camera, Eraser, Trash2, Check, MessageCircle, Palette } = lucide;
+
+    // Simple icon components (replacing lucide-react)
+    const Palette = () => <span>🎨</span>;
+    const Eraser = () => <span>🧹</span>;
+    const Trash2 = () => <span>🗑️</span>;
+    const Check = () => <span>✓</span>;
+    const MessageCircle = () => <span>💬</span>;
 
     // Word bank for the game
     const WORD_BANK = [
@@ -73,8 +76,11 @@
       // Canvas drawing logic
       const startDrawing = (e) => {
         if (!isDrawer || !gameStarted) return;
+        e.preventDefault();
         
         const canvas = canvasRef.current;
+        if (!canvas) return;
+        
         const rect = canvas.getBoundingClientRect();
         const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
         const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
@@ -92,6 +98,8 @@
         
         e.preventDefault();
         const canvas = canvasRef.current;
+        if (!canvas) return;
+        
         const rect = canvas.getBoundingClientRect();
         const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
         const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
@@ -113,6 +121,8 @@
 
       const clearCanvas = () => {
         const canvas = canvasRef.current;
+        if (!canvas) return;
+        
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -159,7 +169,6 @@
         setRoundTime(60);
         setMessages([]);
         
-        // Broadcast role switch
         window.localStorage.setItem(`switch_${roomCode}`, JSON.stringify({
           timestamp: Date.now(),
           newWord
@@ -169,10 +178,10 @@
       const startGame = () => {
         if (!roomCode || !playerName) return;
         
+        console.log('Starting game...');
         setIsInGame(true);
         setGameStarted(true);
         
-        // Check if someone else is in the room
         const existingGame = window.localStorage.getItem(`game_${roomCode}`);
         let isPlayer1;
         
@@ -191,6 +200,8 @@
         
         const word = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
         setCurrentWord(word);
+        
+        console.log('Game started! Is drawer:', isPlayer1, 'Word:', word);
       };
 
       // Timer effect
@@ -212,13 +223,20 @@
 
       // Initialize canvas
       useEffect(() => {
-        if (canvasRef.current) {
+        if (canvasRef.current && isInGame) {
+          console.log('Initializing canvas...');
           const canvas = canvasRef.current;
-          canvas.width = canvas.offsetWidth;
-          canvas.height = canvas.offsetHeight;
+          const container = canvas.parentElement;
+          
+          // Set canvas size based on container
+          canvas.width = container.offsetWidth - 20;
+          canvas.height = 400;
+          
           const ctx = canvas.getContext('2d');
           ctx.fillStyle = '#FFFFFF';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          console.log('Canvas initialized:', canvas.width, 'x', canvas.height);
         }
       }, [isInGame]);
 
@@ -231,6 +249,8 @@
           if (lastDrawing) {
             const data = JSON.parse(lastDrawing);
             const canvas = canvasRef.current;
+            if (!canvas) return;
+            
             const ctx = canvas.getContext('2d');
             
             if (data.type === 'clear') {
@@ -487,7 +507,8 @@
                 height: '400px',
                 cursor: isDrawer ? 'crosshair' : 'not-allowed',
                 borderRadius: '12px',
-                touchAction: 'none'
+                touchAction: 'none',
+                border: '1px solid #e2e8f0'
               }}
             />
           </div>
@@ -505,7 +526,7 @@
                 <button
                   onClick={() => setShowColorPicker(!showColorPicker)}
                   style={{
-                    padding: '12px',
+                    padding: '12px 16px',
                     background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                     color: 'white',
                     border: 'none',
@@ -514,15 +535,16 @@
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    fontWeight: '600'
+                    fontWeight: '600',
+                    fontSize: '1rem'
                   }}
                 >
-                  <Palette size={20} /> Color
+                  <Palette /> Color
                 </button>
                 <button
                   onClick={() => setIsEraser(!isEraser)}
                   style={{
-                    padding: '12px',
+                    padding: '12px 16px',
                     background: isEraser ? '#ef4444' : '#f1f5f9',
                     color: isEraser ? 'white' : '#334155',
                     border: 'none',
@@ -531,15 +553,16 @@
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    fontWeight: '600'
+                    fontWeight: '600',
+                    fontSize: '1rem'
                   }}
                 >
-                  <Eraser size={20} /> {isEraser ? 'Erasing' : 'Eraser'}
+                  <Eraser /> {isEraser ? 'Erasing' : 'Eraser'}
                 </button>
                 <button
                   onClick={clearCanvas}
                   style={{
-                    padding: '12px',
+                    padding: '12px 16px',
                     background: '#f1f5f9',
                     color: '#334155',
                     border: 'none',
@@ -548,10 +571,11 @@
                     display: 'flex',
                     alignItems: 'center',
                     gap: '8px',
-                    fontWeight: '600'
+                    fontWeight: '600',
+                    fontSize: '1rem'
                   }}
                 >
-                  <Trash2 size={20} /> Clear
+                  <Trash2 /> Clear
                 </button>
               </div>
 
@@ -646,7 +670,7 @@
                           gap: '8px'
                         }}
                       >
-                        {msg.isCorrect && <Check size={16} style={{ color: '#22c55e' }} />}
+                        {msg.isCorrect && <Check />}
                         <span style={{
                           fontWeight: '600',
                           color: '#334155',
@@ -689,10 +713,11 @@
                     fontWeight: '700',
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px'
+                    gap: '8px',
+                    fontSize: '1rem'
                   }}
                 >
-                  <MessageCircle size={20} /> Guess
+                  <MessageCircle /> Guess
                 </button>
               </div>
             </div>
