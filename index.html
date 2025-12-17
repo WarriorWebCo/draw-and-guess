@@ -43,6 +43,8 @@
     const Trash2 = () => <span>🗑️</span>;
     const Check = () => <span>✓</span>;
     const MessageCircle = () => <span>💬</span>;
+    const Users = () => <span>👥</span>;
+    const Play = () => <span>▶️</span>;
 
     // Pusher configuration
     const PUSHER_KEY = '2b106a71a8bd331695b6';
@@ -72,30 +74,28 @@
       const [brushSize, setBrushSize] = useState(3);
       const [playerName, setPlayerName] = useState('');
       const [roomCode, setRoomCode] = useState('');
-      const [isInGame, setIsInGame] = useState(false);
+      const [gamePhase, setGamePhase] = useState('login'); // 'login', 'lobby', 'playing'
       const [isDrawer, setIsDrawer] = useState(false);
       const [currentWord, setCurrentWord] = useState('');
       const [guess, setGuess] = useState('');
       const [messages, setMessages] = useState([]);
-      const [score, setScore] = useState({ player1: 0, player2: 0 });
+      const [score, setScore] = useState({});
       const [showColorPicker, setShowColorPicker] = useState(false);
-      const [gameStarted, setGameStarted] = useState(false);
       const [roundTime, setRoundTime] = useState(60);
       const [isEraser, setIsEraser] = useState(false);
-      const [connectedPlayers, setConnectedPlayers] = useState(1);
+      const [lobbyPlayers, setLobbyPlayers] = useState([]);
+      const [isHost, setIsHost] = useState(false);
 
       // Initialize Pusher
       useEffect(() => {
-        if (!isInGame) return;
+        if (gamePhase === 'login') return;
 
         console.log('Initializing Pusher for room:', roomCode);
         
-        // Initialize Pusher
         pusherRef.current = new Pusher(PUSHER_KEY, {
           cluster: PUSHER_CLUSTER
         });
 
-        // Subscribe to the room channel
         const channelName = `game-${roomCode}`;
         channelRef.current = pusherRef.current.subscribe(channelName);
 
@@ -118,8 +118,11 @@
           };
           setMessages(prev => [...prev, newMessage]);
           
-          if (data.isCorrect && !isDrawer) {
-            setTimeout(() => switchRoles(), 2000);
+          if (data.isCorrect && data.playerName !== playerName) {
+            setScore(prev => ({
+              ...prev,
+              [data.playerName]: (prev[data.playerName] || 0) + data.points
+            }));
           }
         });
 
@@ -136,7 +139,23 @@
         // Listen for player join events
         channelRef.current.bind('player-joined', function(data) {
           console.log('Player joined:', data);
-          setConnectedPlayers(prev => prev + 1);
+          if (data.playerName !== playerName) {
+            setLobbyPlayers(prev => {
+              if (prev.find(p => p.name === data.playerName)) {
+                return prev;
+              }
+              return [...prev, { name: data.playerName, ready: false }];
+            });
+          }
+        });
+
+        // Listen for game start events
+        channelRef.current.bind('game-start', function(data) {
+          console.log('Game starting:', data);
+          setGamePhase('playing');
+          setIsDrawer(data.drawer === playerName);
+          setCurrentWord(data.word);
+          setScore(data.initialScores);
         });
 
         // Broadcast that this player joined
@@ -151,7 +170,7 @@
             pusherRef.current.disconnect();
           }
         };
-      }, [isInGame, roomCode]);
+      }, [gamePhase, roomCode]);
 
       const broadcastEvent = async (eventName, data) => {
         const channelName = `game-${roomCode}`;
@@ -176,16 +195,11 @@
           console.log('Event broadcast:', eventName, data);
         } catch (error) {
           console.error('Error broadcasting event:', error);
-          // Fallback to localStorage for local testing
-          window.localStorage.setItem(`${channelName}_${eventName}`, JSON.stringify({
-            ...data,
-            timestamp: Date.now()
-          }));
         }
       };
 
       const handleRemoteDrawing = (data) => {
-        if (isDrawer) return; // Don't apply remote drawing if you're the drawer
+        if (isDrawer || data.playerName === playerName) return;
         
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -211,7 +225,7 @@
 
       // Canvas drawing logic
       const startDrawing = (e) => {
-        if (!isDrawer || !gameStarted) return;
+        if (!isDrawer || gamePhase !== 'playing') return;
         e.preventDefault();
         
         const canvas = canvasRef.current;
@@ -230,7 +244,7 @@
       };
 
       const draw = (e) => {
-        if (!isDrawing || !isDrawer || !gameStarted) return;
+        if (!isDrawing || !isDrawer || gamePhase !== 'playing') return;
         
         e.preventDefault();
         const canvas = canvasRef.current;
@@ -281,6 +295,7 @@
         if (!guess.trim()) return;
         
         const isCorrect = guess.toLowerCase().trim() === currentWord.toLowerCase();
+        const points = isCorrect ? Math.max(10, Math.floor(roundTime / 2)) : 0;
         
         const newMessage = {
           player: playerName,
@@ -296,14 +311,14 @@
         broadcastEvent('guess', {
           playerName,
           guess: guess.trim(),
-          isCorrect
+          isCorrect,
+          points
         });
 
         if (isCorrect) {
-          const points = Math.max(10, Math.floor(roundTime / 2));
           setScore(prev => ({
             ...prev,
-            [isDrawer ? 'player1' : 'player2']: prev[isDrawer ? 'player1' : 'player2'] + points
+            [playerName]: (prev[playerName] || 0) + points
           }));
           setTimeout(() => switchRoles(), 2000);
         }
@@ -311,9 +326,14 @@
 
       const switchRoles = () => {
         const newWord = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
-        const newDrawer = !isDrawer;
         
-        setIsDrawer(newDrawer);
+        // Get next drawer from lobby players
+        const allPlayers = [playerName, ...lobbyPlayers.map(p => p.name)];
+        const currentDrawerIndex = allPlayers.findIndex(p => isDrawer && p === playerName);
+        const nextDrawerIndex = (currentDrawerIndex + 1) % allPlayers.length;
+        const nextDrawer = allPlayers[nextDrawerIndex];
+        
+        setIsDrawer(nextDrawer === playerName);
         setCurrentWord(newWord);
         clearCanvas();
         setRoundTime(60);
@@ -321,31 +341,69 @@
         
         // Broadcast role switch
         broadcastEvent('switch-roles', {
-          newDrawer: newDrawer ? playerName : 'other',
+          newDrawer: nextDrawer,
           newWord
         });
       };
 
-      const startGame = () => {
+      const joinLobby = () => {
         if (!roomCode || !playerName) return;
         
+        console.log('Joining lobby...');
+        
+        // Check if this is the first player (host)
+        const existingRoom = window.localStorage.getItem(`room_${roomCode}`);
+        if (!existingRoom) {
+          setIsHost(true);
+          window.localStorage.setItem(`room_${roomCode}`, JSON.stringify({
+            host: playerName,
+            created: Date.now()
+          }));
+        }
+        
+        setLobbyPlayers([{ name: playerName, ready: true }]);
+        setGamePhase('lobby');
+      };
+
+      const startGame = () => {
+        if (!isHost) return;
+        
         console.log('Starting game...');
-        setIsInGame(true);
-        setGameStarted(true);
         
-        // Randomly assign drawer role
-        const isFirstPlayer = Math.random() > 0.5;
-        setIsDrawer(isFirstPlayer);
+        const allPlayers = [playerName, ...lobbyPlayers.map(p => p.name).filter(n => n !== playerName)];
         
+        if (allPlayers.length < 2) {
+          alert('Need at least 2 players to start!');
+          return;
+        }
+        
+        // Pick random drawer
+        const drawerIndex = Math.floor(Math.random() * allPlayers.length);
+        const drawer = allPlayers[drawerIndex];
         const word = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
-        setCurrentWord(word);
         
-        console.log('Game started! Is drawer:', isFirstPlayer, 'Word:', word);
+        // Initialize scores
+        const initialScores = {};
+        allPlayers.forEach(player => {
+          initialScores[player] = 0;
+        });
+        
+        setScore(initialScores);
+        setIsDrawer(drawer === playerName);
+        setCurrentWord(word);
+        setGamePhase('playing');
+        
+        // Broadcast game start
+        broadcastEvent('game-start', {
+          drawer,
+          word,
+          initialScores
+        });
       };
 
       // Timer effect
       useEffect(() => {
-        if (!gameStarted || roundTime <= 0) return;
+        if (gamePhase !== 'playing' || roundTime <= 0) return;
         
         const timer = setInterval(() => {
           setRoundTime(prev => {
@@ -358,11 +416,11 @@
         }, 1000);
 
         return () => clearInterval(timer);
-      }, [gameStarted, roundTime]);
+      }, [gamePhase, roundTime]);
 
       // Initialize canvas
       useEffect(() => {
-        if (canvasRef.current && isInGame) {
+        if (canvasRef.current && gamePhase === 'playing') {
           console.log('Initializing canvas...');
           const canvas = canvasRef.current;
           const container = canvas.parentElement;
@@ -376,9 +434,10 @@
           
           console.log('Canvas initialized:', canvas.width, 'x', canvas.height);
         }
-      }, [isInGame]);
+      }, [gamePhase]);
 
-      if (!isInGame) {
+      // Login Screen
+      if (gamePhase === 'login') {
         return (
           <div style={{
             minHeight: '100vh',
@@ -414,7 +473,7 @@
                 marginBottom: '30px',
                 fontSize: '0.95rem'
               }}>
-                Play with your partner in real-time!
+                Play with your friends in real-time!
               </p>
               
               <div style={{ marginBottom: '20px' }}>
@@ -478,12 +537,12 @@
                   marginTop: '6px',
                   fontStyle: 'italic'
                 }}>
-                  Share this code with your partner
+                  Share this code with your friends
                 </p>
               </div>
 
               <button
-                onClick={startGame}
+                onClick={joinLobby}
                 disabled={!playerName || !roomCode}
                 style={{
                   width: '100%',
@@ -501,13 +560,201 @@
                   boxShadow: (!playerName || !roomCode) ? 'none' : '0 4px 12px rgba(102, 126, 234, 0.4)'
                 }}
               >
-                Start Game 🎮
+                Join Lobby 🚪
               </button>
             </div>
           </div>
         );
       }
 
+      // Lobby Screen
+      if (gamePhase === 'lobby') {
+        return (
+          <div style={{
+            minHeight: '100vh',
+            background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+            fontFamily: "'Quicksand', sans-serif"
+          }}>
+            <div style={{
+              background: 'white',
+              borderRadius: '24px',
+              padding: '40px',
+              maxWidth: '500px',
+              width: '100%',
+              boxShadow: '0 20px 60px rgba(0,0,0,0.3)'
+            }}>
+              <div style={{
+                textAlign: 'center',
+                marginBottom: '30px'
+              }}>
+                <h2 style={{
+                  fontSize: '2rem',
+                  fontWeight: '800',
+                  color: '#334155',
+                  marginBottom: '10px'
+                }}>
+                  Game Lobby
+                </h2>
+                <div style={{
+                  display: 'inline-block',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: 'white',
+                  padding: '12px 24px',
+                  borderRadius: '12px',
+                  fontSize: '1.5rem',
+                  fontWeight: '700',
+                  letterSpacing: '2px'
+                }}>
+                  {roomCode}
+                </div>
+                <p style={{
+                  fontSize: '0.9rem',
+                  color: '#94a3b8',
+                  marginTop: '10px'
+                }}>
+                  Share this code with friends to join!
+                </p>
+              </div>
+
+              <div style={{
+                background: '#f8fafc',
+                borderRadius: '16px',
+                padding: '20px',
+                marginBottom: '20px'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  marginBottom: '15px'
+                }}>
+                  <Users />
+                  <h3 style={{
+                    fontSize: '1.2rem',
+                    fontWeight: '700',
+                    color: '#334155'
+                  }}>
+                    Players ({lobbyPlayers.length})
+                  </h3>
+                </div>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {lobbyPlayers.map((player, i) => (
+                    <div key={i} style={{
+                      background: 'white',
+                      padding: '12px 16px',
+                      borderRadius: '12px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      border: '2px solid #e2e8f0'
+                    }}>
+                      <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px'
+                      }}>
+                        <div style={{
+                          width: '40px',
+                          height: '40px',
+                          borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          color: 'white',
+                          fontWeight: '700',
+                          fontSize: '1.2rem'
+                        }}>
+                          {player.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span style={{
+                          fontWeight: '600',
+                          color: '#334155',
+                          fontSize: '1rem'
+                        }}>
+                          {player.name}
+                          {player.name === playerName && ' (You)'}
+                        </span>
+                      </div>
+                      {player.name === playerName && isHost && (
+                        <span style={{
+                          background: '#fbbf24',
+                          color: '#78350f',
+                          padding: '4px 12px',
+                          borderRadius: '8px',
+                          fontSize: '0.8rem',
+                          fontWeight: '700'
+                        }}>
+                          HOST
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {lobbyPlayers.length < 2 && (
+                  <p style={{
+                    textAlign: 'center',
+                    color: '#94a3b8',
+                    fontSize: '0.9rem',
+                    marginTop: '15px',
+                    fontStyle: 'italic'
+                  }}>
+                    Waiting for more players to join...
+                  </p>
+                )}
+              </div>
+
+              {isHost && (
+                <button
+                  onClick={startGame}
+                  disabled={lobbyPlayers.length < 2}
+                  style={{
+                    width: '100%',
+                    padding: '16px',
+                    background: lobbyPlayers.length < 2
+                      ? '#cbd5e1' 
+                      : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '12px',
+                    fontSize: '1.1rem',
+                    fontWeight: '700',
+                    cursor: lobbyPlayers.length < 2 ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '10px',
+                    boxShadow: lobbyPlayers.length < 2 ? 'none' : '0 4px 12px rgba(34, 197, 94, 0.4)'
+                  }}
+                >
+                  <Play /> Start Game
+                </button>
+              )}
+
+              {!isHost && (
+                <div style={{
+                  textAlign: 'center',
+                  padding: '16px',
+                  background: '#f1f5f9',
+                  borderRadius: '12px',
+                  color: '#64748b',
+                  fontSize: '0.95rem'
+                }}>
+                  Waiting for host to start the game...
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      }
+
+      // Playing Screen
       return (
         <div style={{
           minHeight: '100vh',
@@ -540,14 +787,14 @@
               <div>
                 <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Room: {roomCode}</div>
                 <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                  {connectedPlayers} player{connectedPlayers !== 1 ? 's' : ''}
+                  {lobbyPlayers.length} player{lobbyPlayers.length !== 1 ? 's' : ''}
                 </div>
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Score</div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Your Score</div>
               <div style={{ fontWeight: '700', color: '#334155' }}>
-                {score.player1} - {score.player2}
+                {score[playerName] || 0}
               </div>
             </div>
           </div>
@@ -564,10 +811,27 @@
               boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
             }}>
               <div style={{ fontSize: '0.9rem', color: '#92400e', marginBottom: '5px', fontWeight: '600' }}>
-                Draw this word:
+                🎨 Draw this word:
               </div>
               <div style={{ fontSize: '2rem', fontWeight: '800', color: '#78350f' }}>
                 {currentWord}
+              </div>
+            </div>
+          )}
+
+          {/* Guesser hint */}
+          {!isDrawer && (
+            <div style={{
+              background: '#dbeafe',
+              border: '2px solid #3b82f6',
+              borderRadius: '16px',
+              padding: '15px',
+              marginBottom: '10px',
+              textAlign: 'center',
+              boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+            }}>
+              <div style={{ fontSize: '0.9rem', color: '#1e40af', fontWeight: '600' }}>
+                🤔 Guess what's being drawn! ({currentWord.length} letters)
               </div>
             </div>
           )}
@@ -592,7 +856,7 @@
               style={{
                 width: '100%',
                 height: '400px',
-                cursor: isDrawer ? 'crosshair' : 'not-allowed',
+                cursor: isDrawer ? 'crosshair' : 'default',
                 borderRadius: '12px',
                 touchAction: 'none',
                 border: '1px solid #e2e8f0'
