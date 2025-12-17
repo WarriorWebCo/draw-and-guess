@@ -50,14 +50,59 @@
     const PUSHER_KEY = '2b106a71a8bd331695b6';
     const PUSHER_CLUSTER = 'us2';
 
-    // Word bank for the game
-    const WORD_BANK = [
-      'cat', 'house', 'car', 'tree', 'sun', 'moon', 'star', 'flower', 'pizza', 'burger',
-      'phone', 'laptop', 'guitar', 'drum', 'camera', 'book', 'mountain', 'ocean', 'fish',
-      'bird', 'dog', 'bicycle', 'airplane', 'rocket', 'cloud', 'rainbow', 'umbrella',
-      'crown', 'heart', 'diamond', 'key', 'lock', 'glasses', 'hat', 'shoe', 'shirt',
-      'pants', 'coffee', 'cake', 'ice cream', 'apple', 'banana', 'strawberry', 'watermelon'
-    ];
+    // Comprehensive word bank organized by category and difficulty
+    const WORD_CATEGORIES = {
+      animals: {
+        easy: ['cat', 'dog', 'fish', 'bird', 'cow', 'pig', 'horse', 'sheep', 'duck', 'frog', 'bee', 'ant', 'bear', 'lion', 'tiger', 'zebra', 'mouse', 'rat', 'snake', 'turtle'],
+        medium: ['elephant', 'giraffe', 'penguin', 'dolphin', 'octopus', 'kangaroo', 'raccoon', 'squirrel', 'hedgehog', 'flamingo', 'peacock', 'pelican', 'walrus', 'armadillo', 'platypus', 'chameleon', 'parrot', 'lobster', 'seahorse', 'butterfly'],
+        hard: ['narwhal', 'axolotl', 'capybara', 'quokka', 'pangolin', 'numbat', 'cassowary', 'nautilus', 'mantis shrimp', 'secretary bird', 'okapi', 'binturong', 'fossa', 'aye-aye', 'tarsier', 'gharial', 'shoebill', 'proboscis monkey', 'kakapo', 'blobfish']
+      },
+      food: {
+        easy: ['pizza', 'burger', 'hot dog', 'taco', 'bread', 'egg', 'apple', 'banana', 'orange', 'cookie', 'cake', 'pie', 'milk', 'cheese', 'rice', 'corn', 'carrot', 'potato', 'tomato', 'salad'],
+        medium: ['spaghetti', 'burrito', 'sandwich', 'pancake', 'waffle', 'donut', 'pretzel', 'croissant', 'muffin', 'cupcake', 'brownie', 'sushi', 'ramen', 'lasagna', 'quesadilla', 'bagel', 'nachos', 'popcorn', 'ice cream', 'smoothie'],
+        hard: ['tiramisu', 'macarons', 'focaccia', 'croquette', 'bruschetta', 'empanada', 'pierogi', 'baklava', 'falafel', 'gnocchi', 'risotto', 'bouillabaisse', 'ratatouille', 'ceviche', 'pho', 'bibimbap', 'paella', 'Wellington', 'soufflé', 'tartare']
+      },
+      objects: {
+        easy: ['phone', 'book', 'pen', 'cup', 'chair', 'table', 'bed', 'door', 'window', 'lamp', 'clock', 'key', 'bag', 'box', 'ball', 'shoe', 'hat', 'shirt', 'pants', 'sock'],
+        medium: ['laptop', 'camera', 'guitar', 'drum', 'telescope', 'microscope', 'compass', 'binoculars', 'umbrella', 'backpack', 'suitcase', 'wallet', 'sunglasses', 'headphones', 'keyboard', 'controller', 'skateboard', 'bicycle', 'scooter', 'helmet'],
+        hard: ['metronome', 'sextant', 'astrolabe', 'theodolite', 'spectrometer', 'oscilloscope', 'kaleidoscope', 'gramophone', 'harpsichord', 'melodica', 'didgeridoo', 'marimba', 'glockenspiel', 'astrolabe', 'chronometer', 'barometer', 'anemometer', 'hygrometer', 'altimeter', 'periscope']
+      },
+      nature: {
+        easy: ['tree', 'flower', 'sun', 'moon', 'star', 'cloud', 'rain', 'snow', 'wind', 'mountain', 'river', 'ocean', 'beach', 'island', 'rock', 'leaf', 'grass', 'dirt', 'sand', 'water'],
+        medium: ['rainbow', 'waterfall', 'volcano', 'canyon', 'glacier', 'desert', 'forest', 'jungle', 'meadow', 'swamp', 'lagoon', 'reef', 'cave', 'iceberg', 'aurora', 'comet', 'meteor', 'eclipse', 'tide', 'geyser'],
+        hard: ['nebula', 'supernova', 'quasar', 'stalactite', 'stalagmite', 'archipelago', 'fjord', 'atoll', 'butte', 'mesa', 'moraine', 'caldera', 'karst', 'tundra', 'savanna', 'estuary', 'mangrove', 'bioluminescence', 'permafrost', 'continental shelf']
+      },
+      sports: {
+        easy: ['soccer', 'basketball', 'baseball', 'football', 'tennis', 'golf', 'swimming', 'running', 'jumping', 'skating', 'skiing', 'boxing', 'bowling', 'fishing', 'surfing', 'diving', 'wrestling', 'karate', 'yoga', 'dance'],
+        medium: ['volleyball', 'badminton', 'ping pong', 'archery', 'fencing', 'judo', 'gymnastics', 'rowing', 'kayaking', 'cycling', 'marathon', 'triathlon', 'polo', 'lacrosse', 'rugby', 'cricket', 'squash', 'racquetball', 'curling', 'bobsled'],
+        hard: ['rhythmic gymnastics', 'synchronized swimming', 'skeleton racing', 'biathlon', 'decathlon', 'pentathlon', 'steeplechase', 'discus throw', 'hammer throw', 'javelin', 'pole vault', 'triple jump', 'parkour', 'speed climbing', 'kite surfing', 'skeleton', 'luge', 'Nordic combined', 'team handball', 'sepak takraw']
+      },
+      places: {
+        easy: ['house', 'school', 'park', 'store', 'farm', 'zoo', 'beach', 'city', 'town', 'road', 'bridge', 'tower', 'castle', 'church', 'temple', 'stadium', 'theater', 'museum', 'library', 'hospital'],
+        medium: ['skyscraper', 'lighthouse', 'windmill', 'observatory', 'planetarium', 'aquarium', 'cathedral', 'mosque', 'pagoda', 'pyramid', 'colosseum', 'aqueduct', 'fortress', 'palace', 'mansion', 'cottage', 'cabin', 'igloo', 'teepee', 'yurt'],
+        hard: ['mausoleum', 'obelisk', 'ziggurat', 'minaret', 'basilica', 'rotunda', 'campanile', 'pantheon', 'acropolis', 'citadel', 'gazebo', 'pavilion', 'conservatory', 'orangery', 'belvedere', 'pergola', 'loggia', 'colonnade', 'amphitheater', 'hippodrome']
+      },
+      actions: {
+        easy: ['run', 'jump', 'walk', 'sit', 'sleep', 'eat', 'drink', 'read', 'write', 'draw', 'paint', 'sing', 'dance', 'wave', 'clap', 'kick', 'throw', 'catch', 'push', 'pull'],
+        medium: ['skateboard', 'juggle', 'cartwheel', 'somersault', 'tiptoe', 'limbo', 'moonwalk', 'breakdance', 'headstand', 'handstand', 'meditate', 'stretch', 'yawn', 'sneeze', 'hiccup', 'whistle', 'gargle', 'shuffle', 'strut', 'march'],
+        hard: ['genuflect', 'pirouette', 'arabesque', 'plié', 'jeté', 'fouetté', 'ricochet', 'oscillate', 'undulate', 'meander', 'saunter', 'traipse', 'gallivant', 'genuflect', 'prostrate', 'kowtow', 'salaam', 'curtsy', 'genuflect', 'pantomime']
+      },
+      vehicles: {
+        easy: ['car', 'truck', 'bus', 'train', 'plane', 'boat', 'ship', 'bike', 'van', 'taxi', 'jeep', 'rocket', 'sled', 'canoe', 'raft', 'wagon', 'cart', 'scooter', 'tractor', 'ambulance'],
+        medium: ['helicopter', 'submarine', 'motorcycle', 'limousine', 'convertible', 'tow truck', 'fire truck', 'dump truck', 'crane', 'bulldozer', 'excavator', 'steamroller', 'monster truck', 'hot air balloon', 'gondola', 'rickshaw', 'trolley', 'cable car', 'monorail', 'hovercraft'],
+        hard: ['dirigible', 'zeppelin', 'hydrofoil', 'catamaran', 'trimaran', 'velocipede', 'penny-farthing', 'gyrocopter', 'autogyro', 'ornithopter', 'amphicar', 'ekranoplan', 'bathyscaphe', 'submersible', 'seaplane', 'flying boat', 'tiltrotor', 'quadcopter', 'maglev', 'funicular']
+      },
+      professions: {
+        easy: ['doctor', 'nurse', 'teacher', 'chef', 'farmer', 'pilot', 'artist', 'singer', 'dancer', 'writer', 'police', 'firefighter', 'soldier', 'sailor', 'mechanic', 'plumber', 'builder', 'painter', 'driver', 'waiter'],
+        medium: ['architect', 'engineer', 'scientist', 'astronaut', 'detective', 'journalist', 'photographer', 'veterinarian', 'dentist', 'pharmacist', 'librarian', 'accountant', 'lawyer', 'judge', 'electrician', 'carpenter', 'tailor', 'barber', 'bartender', 'florist'],
+        hard: ['anesthesiologist', 'orthodontist', 'chiropractor', 'optometrist', 'actuary', 'sommelier', 'etymologist', 'paleontologist', 'ornithologist', 'entomologist', 'cartographer', 'calligrapher', 'taxidermist', 'apiarist', 'viticulturist', 'archivist', 'numismatist', 'philatelist', 'lepidopterist', 'ichthyologist']
+      },
+      emotions: {
+        easy: ['happy', 'sad', 'angry', 'scared', 'tired', 'excited', 'bored', 'calm', 'silly', 'proud', 'shy', 'brave', 'lonely', 'love', 'hate', 'mad', 'grumpy', 'sleepy', 'hungry', 'sick'],
+        medium: ['confused', 'surprised', 'anxious', 'nervous', 'jealous', 'embarrassed', 'guilty', 'frustrated', 'disappointed', 'relieved', 'grateful', 'confident', 'curious', 'suspicious', 'worried', 'hopeful', 'content', 'shocked', 'disgusted', 'amused'],
+        hard: ['melancholy', 'euphoric', 'apprehensive', 'ambivalent', 'nostalgic', 'exasperated', 'mortified', 'indignant', 'perplexed', 'contemplative', 'wistful', 'forlorn', 'jubilant', 'remorseful', 'vindicated', 'bewildered', 'flabbergasted', 'despondent', 'elated', 'pensive']
+      }
+    };
 
     const COLORS = [
       '#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', 
@@ -90,6 +135,9 @@
       const [showLeaderboard, setShowLeaderboard] = useState(false);
       const [lastRoundWinner, setLastRoundWinner] = useState(null);
       const [lastRoundPoints, setLastRoundPoints] = useState(0);
+      const [selectedCategories, setSelectedCategories] = useState(['animals', 'food', 'objects']);
+      const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
+      const [usedWords, setUsedWords] = useState([]);
 
       // Keep refs in sync with state
       useEffect(() => {
@@ -256,6 +304,14 @@
           setIsDrawer(data.drawer === playerName);
           setCurrentWord(data.word);
           setScore(data.initialScores);
+          
+          // Apply game settings from host
+          if (data.categories) {
+            setSelectedCategories(data.categories);
+          }
+          if (data.difficulty) {
+            setSelectedDifficulty(data.difficulty);
+          }
         });
 
         // Broadcast that this player joined
@@ -281,6 +337,32 @@
           }
         };
       }, [gamePhase, roomCode]);
+
+      const getRandomWord = () => {
+        // Build word pool from selected categories and difficulty
+        let wordPool = [];
+        selectedCategories.forEach(category => {
+          if (WORD_CATEGORIES[category] && WORD_CATEGORIES[category][selectedDifficulty]) {
+            wordPool = [...wordPool, ...WORD_CATEGORIES[category][selectedDifficulty]];
+          }
+        });
+        
+        // Filter out used words
+        const availableWords = wordPool.filter(word => !usedWords.includes(word));
+        
+        // If all words used, reset the used words list
+        if (availableWords.length === 0) {
+          console.log('All words used, resetting...');
+          setUsedWords([]);
+          return wordPool[Math.floor(Math.random() * wordPool.length)];
+        }
+        
+        // Pick a random unused word
+        const randomWord = availableWords[Math.floor(Math.random() * availableWords.length)];
+        setUsedWords(prev => [...prev, randomWord]);
+        
+        return randomWord;
+      };
 
       const broadcastEvent = async (eventName, data) => {
         const channelName = `game-${roomCode}`;
@@ -478,7 +560,7 @@
       };
 
       const switchRoles = () => {
-        const newWord = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
+        const newWord = getRandomWord();
         
         // Get next drawer from lobby players
         const allPlayers = [playerName, ...lobbyPlayers.map(p => p.name)];
@@ -537,7 +619,7 @@
         // Pick random drawer
         const drawerIndex = Math.floor(Math.random() * allPlayers.length);
         const drawer = allPlayers[drawerIndex];
-        const word = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
+        const word = getRandomWord();
         
         // Initialize scores
         const initialScores = {};
@@ -550,11 +632,13 @@
         setCurrentWord(word);
         setGamePhase('playing');
         
-        // Broadcast game start
+        // Broadcast game start with settings
         broadcastEvent('game-start', {
           drawer,
           word,
-          initialScores
+          initialScores,
+          categories: selectedCategories,
+          difficulty: selectedDifficulty
         });
       };
 
@@ -868,30 +952,141 @@
               </div>
 
               {isHost && (
-                <button
-                  onClick={startGame}
-                  disabled={lobbyPlayers.length < 2}
-                  style={{
-                    width: '100%',
-                    padding: '16px',
-                    background: lobbyPlayers.length < 2
-                      ? '#cbd5e1' 
-                      : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '12px',
-                    fontSize: '1.1rem',
-                    fontWeight: '700',
-                    cursor: lobbyPlayers.length < 2 ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '10px',
-                    boxShadow: lobbyPlayers.length < 2 ? 'none' : '0 4px 12px rgba(34, 197, 94, 0.4)'
-                  }}
-                >
-                  <Play /> Start Game
-                </button>
+                <>
+                  {/* Game Settings */}
+                  <div style={{
+                    background: '#f8fafc',
+                    borderRadius: '16px',
+                    padding: '20px',
+                    marginBottom: '20px'
+                  }}>
+                    <h3 style={{
+                      fontSize: '1.2rem',
+                      fontWeight: '700',
+                      color: '#334155',
+                      marginBottom: '15px'
+                    }}>
+                      ⚙️ Game Settings
+                    </h3>
+                    
+                    {/* Difficulty Selection */}
+                    <div style={{ marginBottom: '20px' }}>
+                      <label style={{
+                        display: 'block',
+                        fontSize: '0.9rem',
+                        fontWeight: '600',
+                        color: '#334155',
+                        marginBottom: '10px'
+                      }}>
+                        Difficulty Level:
+                      </label>
+                      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                        {['easy', 'medium', 'hard'].map(diff => (
+                          <button
+                            key={diff}
+                            onClick={() => setSelectedDifficulty(diff)}
+                            style={{
+                              flex: 1,
+                              padding: '12px',
+                              background: selectedDifficulty === diff 
+                                ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                                : 'white',
+                              color: selectedDifficulty === diff ? 'white' : '#334155',
+                              border: selectedDifficulty === diff ? 'none' : '2px solid #e2e8f0',
+                              borderRadius: '12px',
+                              fontSize: '1rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              textTransform: 'capitalize',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            {diff === 'easy' && '😊 '}
+                            {diff === 'medium' && '🤔 '}
+                            {diff === 'hard' && '🔥 '}
+                            {diff}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Category Selection */}
+                    <div>
+                      <label style={{
+                        display: 'block',
+                        fontSize: '0.9rem',
+                        fontWeight: '600',
+                        color: '#334155',
+                        marginBottom: '10px'
+                      }}>
+                        Categories (select at least one):
+                      </label>
+                      <div style={{ 
+                        display: 'grid', 
+                        gridTemplateColumns: 'repeat(2, 1fr)',
+                        gap: '10px'
+                      }}>
+                        {Object.keys(WORD_CATEGORIES).map(category => (
+                          <button
+                            key={category}
+                            onClick={() => {
+                              setSelectedCategories(prev => {
+                                if (prev.includes(category)) {
+                                  // Don't allow deselecting if it's the last one
+                                  if (prev.length === 1) return prev;
+                                  return prev.filter(c => c !== category);
+                                }
+                                return [...prev, category];
+                              });
+                            }}
+                            style={{
+                              padding: '10px',
+                              background: selectedCategories.includes(category)
+                                ? 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)'
+                                : 'white',
+                              color: selectedCategories.includes(category) ? 'white' : '#334155',
+                              border: selectedCategories.includes(category) ? 'none' : '2px solid #e2e8f0',
+                              borderRadius: '10px',
+                              fontSize: '0.9rem',
+                              fontWeight: '600',
+                              cursor: 'pointer',
+                              textTransform: 'capitalize',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            {selectedCategories.includes(category) && '✓ '}
+                            {category}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={startGame}
+                    disabled={lobbyPlayers.length < 2}
+                    style={{
+                      width: '100%',
+                      padding: '16px',
+                      background: lobbyPlayers.length < 2
+                        ? '#cbd5e1' 
+                        : 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '12px',
+                      fontSize: '1.1rem',
+                      fontWeight: '700',
+                      cursor: lobbyPlayers.length < 2 ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '10px',
+                      boxShadow: lobbyPlayers.length < 2 ? 'none' : '0 4px 12px rgba(34, 197, 94, 0.4)'
+                    }}
+                  >
+                    <Play /> Start Game
+                  </button>
+                </>
               )}
 
               {!isHost && (
