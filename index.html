@@ -87,6 +87,9 @@
       const [isEraser, setIsEraser] = useState(false);
       const [lobbyPlayers, setLobbyPlayers] = useState([]);
       const [isHost, setIsHost] = useState(false);
+      const [showLeaderboard, setShowLeaderboard] = useState(false);
+      const [lastRoundWinner, setLastRoundWinner] = useState(null);
+      const [lastRoundPoints, setLastRoundPoints] = useState(0);
 
       // Keep refs in sync with state
       useEffect(() => {
@@ -123,19 +126,39 @@
         // Listen for guess events
         channelRef.current.bind('guess', function(data) {
           console.log('Received guess:', data);
-          const newMessage = {
-            player: data.playerName,
-            text: data.guess,
-            isCorrect: data.isCorrect,
-            timestamp: Date.now()
-          };
-          setMessages(prev => [...prev, newMessage]);
           
-          if (data.isCorrect && data.playerName !== playerName) {
+          // Only add to messages if it's NOT from me (I already added it locally)
+          if (data.playerName !== playerName) {
+            const newMessage = {
+              player: data.playerName,
+              text: data.guess,
+              isCorrect: data.isCorrect,
+              timestamp: Date.now()
+            };
+            setMessages(prev => [...prev, newMessage]);
+          }
+          
+          // Update score if someone guessed correctly
+          if (data.isCorrect) {
             setScore(prev => ({
               ...prev,
               [data.playerName]: (prev[data.playerName] || 0) + data.points
             }));
+            
+            // Show celebration for everyone
+            if (data.playerName !== playerName) {
+              setLastRoundWinner(data.playerName);
+              setLastRoundPoints(data.points);
+              
+              setTimeout(() => {
+                setShowLeaderboard(true);
+                
+                setTimeout(() => {
+                  setShowLeaderboard(false);
+                  setLastRoundWinner(null);
+                }, 4000);
+              }, 2000);
+            }
           }
         });
 
@@ -412,7 +435,7 @@
         if (!guess.trim()) return;
         
         const isCorrect = guess.toLowerCase().trim() === currentWord.toLowerCase();
-        const points = isCorrect ? Math.max(10, Math.floor(roundTime / 2)) : 0;
+        const points = isCorrect ? Math.max(100, Math.floor(roundTime * 10)) : 0;
         
         const newMessage = {
           player: playerName,
@@ -437,7 +460,22 @@
             ...prev,
             [playerName]: (prev[playerName] || 0) + points
           }));
-          setTimeout(() => switchRoles(), 2000);
+          
+          // Show celebration
+          setLastRoundWinner(playerName);
+          setLastRoundPoints(points);
+          
+          // Wait for celebration, then show leaderboard
+          setTimeout(() => {
+            setShowLeaderboard(true);
+            
+            // After showing leaderboard, switch roles and continue
+            setTimeout(() => {
+              setShowLeaderboard(false);
+              setLastRoundWinner(null);
+              switchRoles();
+            }, 4000);
+          }, 2000);
         }
       };
 
@@ -881,8 +919,191 @@
           minHeight: '100vh',
           background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
           padding: '10px',
-          fontFamily: "'Quicksand', sans-serif"
+          fontFamily: "'Quicksand', sans-serif",
+          position: 'relative'
         }}>
+          {/* Celebration Animation */}
+          {lastRoundWinner && !showLeaderboard && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              animation: 'fadeIn 0.3s ease-in'
+            }}>
+              <div style={{
+                textAlign: 'center',
+                animation: 'bounceIn 0.6s ease-out'
+              }}>
+                <div style={{
+                  fontSize: '6rem',
+                  marginBottom: '20px',
+                  animation: 'spin 1s ease-in-out'
+                }}>
+                  🎉
+                </div>
+                <h1 style={{
+                  fontSize: '3rem',
+                  color: 'white',
+                  fontWeight: '800',
+                  marginBottom: '20px',
+                  textShadow: '0 4px 20px rgba(0,0,0,0.5)'
+                }}>
+                  {lastRoundWinner === playerName ? 'You Got It!' : `${lastRoundWinner} Got It!`}
+                </h1>
+                <div style={{
+                  fontSize: '4rem',
+                  color: '#fbbf24',
+                  fontWeight: '800',
+                  textShadow: '0 4px 20px rgba(0,0,0,0.5)',
+                  animation: 'pulse 1s ease-in-out infinite'
+                }}>
+                  +{lastRoundPoints} pts
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Leaderboard Modal */}
+          {showLeaderboard && (
+            <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              background: 'rgba(0, 0, 0, 0.9)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              animation: 'fadeIn 0.3s ease-in'
+            }}>
+              <div style={{
+                background: 'white',
+                borderRadius: '24px',
+                padding: '40px',
+                maxWidth: '500px',
+                width: '90%',
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                animation: 'slideUp 0.5s ease-out'
+              }}>
+                <h2 style={{
+                  fontSize: '2.5rem',
+                  fontWeight: '800',
+                  textAlign: 'center',
+                  marginBottom: '30px',
+                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent'
+                }}>
+                  🏆 Leaderboard
+                </h2>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                  {Object.entries(score)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([player, points], index) => (
+                      <div
+                        key={player}
+                        style={{
+                          background: index === 0 
+                            ? 'linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%)'
+                            : index === 1
+                            ? 'linear-gradient(135deg, #94a3b8 0%, #64748b 100%)'
+                            : index === 2
+                            ? 'linear-gradient(135deg, #fb923c 0%, #ea580c 100%)'
+                            : '#f1f5f9',
+                          padding: '20px',
+                          borderRadius: '16px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          boxShadow: index < 3 ? '0 4px 12px rgba(0,0,0,0.2)' : 'none',
+                          transform: `scale(${index === 0 ? 1.05 : 1})`,
+                          animation: `slideIn ${0.3 + index * 0.1}s ease-out`
+                        }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                          <div style={{
+                            fontSize: '2rem',
+                            fontWeight: '800',
+                            color: index < 3 ? 'white' : '#334155',
+                            minWidth: '40px'
+                          }}>
+                            {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}.`}
+                          </div>
+                          <div>
+                            <div style={{
+                              fontSize: '1.3rem',
+                              fontWeight: '700',
+                              color: index < 3 ? 'white' : '#334155'
+                            }}>
+                              {player}
+                              {player === playerName && ' (You)'}
+                            </div>
+                          </div>
+                        </div>
+                        <div style={{
+                          fontSize: '1.8rem',
+                          fontWeight: '800',
+                          color: index < 3 ? 'white' : '#334155'
+                        }}>
+                          {points}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+
+                <p style={{
+                  textAlign: 'center',
+                  color: '#64748b',
+                  fontSize: '0.9rem',
+                  marginTop: '30px',
+                  fontStyle: 'italic'
+                }}>
+                  Next round starting soon...
+                </p>
+              </div>
+            </div>
+          )}
+
+          <style>
+            {`
+              @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+              }
+              @keyframes bounceIn {
+                0% { transform: scale(0.3); opacity: 0; }
+                50% { transform: scale(1.1); }
+                100% { transform: scale(1); opacity: 1; }
+              }
+              @keyframes spin {
+                0% { transform: rotate(0deg) scale(0.5); }
+                50% { transform: rotate(180deg) scale(1.2); }
+                100% { transform: rotate(360deg) scale(1); }
+              }
+              @keyframes pulse {
+                0%, 100% { transform: scale(1); }
+                50% { transform: scale(1.1); }
+              }
+              @keyframes slideUp {
+                from { transform: translateY(100px); opacity: 0; }
+                to { transform: translateY(0); opacity: 1; }
+              }
+              @keyframes slideIn {
+                from { transform: translateX(-50px); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+              }
+            `}
+          </style>
           {/* Header */}
           <div style={{
             background: 'white',
