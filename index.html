@@ -8,6 +8,9 @@
   <!-- Google Font -->
   <link href="https://fonts.googleapis.com/css2?family=Quicksand:wght@400;600;700;800&display=swap" rel="stylesheet">
   
+  <!-- Pusher -->
+  <script src="https://js.pusher.com/8.4.0/pusher.min.js"></script>
+  
   <!-- React and Babel -->
   <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
@@ -34,12 +37,16 @@
   <script type="text/babel">
     const { useState, useRef, useEffect } = React;
 
-    // Simple icon components (replacing lucide-react)
+    // Simple icon components
     const Palette = () => <span>🎨</span>;
     const Eraser = () => <span>🧹</span>;
     const Trash2 = () => <span>🗑️</span>;
     const Check = () => <span>✓</span>;
     const MessageCircle = () => <span>💬</span>;
+
+    // Pusher configuration
+    const PUSHER_KEY = '2b106a71a8bd331695b6';
+    const PUSHER_CLUSTER = 'us2';
 
     // Word bank for the game
     const WORD_BANK = [
@@ -57,6 +64,9 @@
 
     const DrawingGame = () => {
       const canvasRef = useRef(null);
+      const pusherRef = useRef(null);
+      const channelRef = useRef(null);
+      
       const [isDrawing, setIsDrawing] = useState(false);
       const [currentColor, setCurrentColor] = useState('#000000');
       const [brushSize, setBrushSize] = useState(3);
@@ -72,6 +82,132 @@
       const [gameStarted, setGameStarted] = useState(false);
       const [roundTime, setRoundTime] = useState(60);
       const [isEraser, setIsEraser] = useState(false);
+      const [connectedPlayers, setConnectedPlayers] = useState(1);
+
+      // Initialize Pusher
+      useEffect(() => {
+        if (!isInGame) return;
+
+        console.log('Initializing Pusher for room:', roomCode);
+        
+        // Initialize Pusher
+        pusherRef.current = new Pusher(PUSHER_KEY, {
+          cluster: PUSHER_CLUSTER
+        });
+
+        // Subscribe to the room channel
+        const channelName = `game-${roomCode}`;
+        channelRef.current = pusherRef.current.subscribe(channelName);
+
+        console.log('Subscribed to channel:', channelName);
+
+        // Listen for drawing events
+        channelRef.current.bind('drawing', function(data) {
+          console.log('Received drawing event:', data);
+          handleRemoteDrawing(data);
+        });
+
+        // Listen for guess events
+        channelRef.current.bind('guess', function(data) {
+          console.log('Received guess:', data);
+          const newMessage = {
+            player: data.playerName,
+            text: data.guess,
+            isCorrect: data.isCorrect,
+            timestamp: Date.now()
+          };
+          setMessages(prev => [...prev, newMessage]);
+          
+          if (data.isCorrect && !isDrawer) {
+            setTimeout(() => switchRoles(), 2000);
+          }
+        });
+
+        // Listen for role switch events
+        channelRef.current.bind('switch-roles', function(data) {
+          console.log('Received role switch:', data);
+          setIsDrawer(data.newDrawer === playerName);
+          setCurrentWord(data.newWord);
+          clearCanvas();
+          setRoundTime(60);
+          setMessages([]);
+        });
+
+        // Listen for player join events
+        channelRef.current.bind('player-joined', function(data) {
+          console.log('Player joined:', data);
+          setConnectedPlayers(prev => prev + 1);
+        });
+
+        // Broadcast that this player joined
+        broadcastEvent('player-joined', { playerName });
+
+        return () => {
+          if (channelRef.current) {
+            channelRef.current.unbind_all();
+            pusherRef.current.unsubscribe(`game-${roomCode}`);
+          }
+          if (pusherRef.current) {
+            pusherRef.current.disconnect();
+          }
+        };
+      }, [isInGame, roomCode]);
+
+      const broadcastEvent = async (eventName, data) => {
+        const channelName = `game-${roomCode}`;
+        
+        // Use Pusher's client events (must be prefixed with "client-")
+        // For production, you'd want a backend to trigger these
+        // For now, we'll use a simple proxy API
+        
+        try {
+          const response = await fetch('https://api-us2.pusher.com/apps/2092441/events', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name: eventName,
+              channel: channelName,
+              data: JSON.stringify(data)
+            })
+          });
+          
+          console.log('Event broadcast:', eventName, data);
+        } catch (error) {
+          console.error('Error broadcasting event:', error);
+          // Fallback to localStorage for local testing
+          window.localStorage.setItem(`${channelName}_${eventName}`, JSON.stringify({
+            ...data,
+            timestamp: Date.now()
+          }));
+        }
+      };
+
+      const handleRemoteDrawing = (data) => {
+        if (isDrawer) return; // Don't apply remote drawing if you're the drawer
+        
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
+        
+        if (data.type === 'clear') {
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+        } else if (data.type === 'start') {
+          ctx.beginPath();
+          ctx.moveTo(data.x, data.y);
+        } else if (data.type === 'draw') {
+          ctx.strokeStyle = data.isEraser ? '#FFFFFF' : data.color;
+          ctx.lineWidth = data.isEraser ? data.size * 3 : data.size;
+          ctx.lineCap = 'round';
+          ctx.lineTo(data.x, data.y);
+          ctx.stroke();
+        } else if (data.type === 'stop') {
+          ctx.closePath();
+        }
+      };
 
       // Canvas drawing logic
       const startDrawing = (e) => {
@@ -90,7 +226,7 @@
         ctx.moveTo(x, y);
         setIsDrawing(true);
 
-        broadcastDrawing({ type: 'start', x, y });
+        broadcastEvent('drawing', { type: 'start', x, y, playerName });
       };
 
       const draw = (e) => {
@@ -111,12 +247,21 @@
         ctx.lineTo(x, y);
         ctx.stroke();
 
-        broadcastDrawing({ type: 'draw', x, y, color: currentColor, size: brushSize, isEraser });
+        broadcastEvent('drawing', { 
+          type: 'draw', 
+          x, 
+          y, 
+          color: currentColor, 
+          size: brushSize, 
+          isEraser,
+          playerName 
+        });
       };
 
       const stopDrawing = () => {
+        if (!isDrawer) return;
         setIsDrawing(false);
-        broadcastDrawing({ type: 'stop' });
+        broadcastEvent('drawing', { type: 'stop', playerName });
       };
 
       const clearCanvas = () => {
@@ -126,12 +271,10 @@
         const ctx = canvas.getContext('2d');
         ctx.fillStyle = '#FFFFFF';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
-        broadcastDrawing({ type: 'clear' });
-      };
-
-      const broadcastDrawing = (data) => {
-        const drawingData = { ...data, timestamp: Date.now(), roomCode };
-        window.localStorage.setItem(`drawing_${roomCode}`, JSON.stringify(drawingData));
+        
+        if (isDrawer) {
+          broadcastEvent('drawing', { type: 'clear', playerName });
+        }
       };
 
       const submitGuess = () => {
@@ -149,6 +292,13 @@
         setMessages(prev => [...prev, newMessage]);
         setGuess('');
 
+        // Broadcast the guess
+        broadcastEvent('guess', {
+          playerName,
+          guess: guess.trim(),
+          isCorrect
+        });
+
         if (isCorrect) {
           const points = Math.max(10, Math.floor(roundTime / 2));
           setScore(prev => ({
@@ -157,22 +307,23 @@
           }));
           setTimeout(() => switchRoles(), 2000);
         }
-
-        window.localStorage.setItem(`guess_${roomCode}`, JSON.stringify(newMessage));
       };
 
       const switchRoles = () => {
-        setIsDrawer(!isDrawer);
         const newWord = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
+        const newDrawer = !isDrawer;
+        
+        setIsDrawer(newDrawer);
         setCurrentWord(newWord);
         clearCanvas();
         setRoundTime(60);
         setMessages([]);
         
-        window.localStorage.setItem(`switch_${roomCode}`, JSON.stringify({
-          timestamp: Date.now(),
+        // Broadcast role switch
+        broadcastEvent('switch-roles', {
+          newDrawer: newDrawer ? playerName : 'other',
           newWord
-        }));
+        });
       };
 
       const startGame = () => {
@@ -182,26 +333,14 @@
         setIsInGame(true);
         setGameStarted(true);
         
-        const existingGame = window.localStorage.getItem(`game_${roomCode}`);
-        let isPlayer1;
-        
-        if (existingGame) {
-          const gameData = JSON.parse(existingGame);
-          isPlayer1 = gameData.player1 !== playerName;
-        } else {
-          isPlayer1 = true;
-          window.localStorage.setItem(`game_${roomCode}`, JSON.stringify({
-            player1: playerName,
-            timestamp: Date.now()
-          }));
-        }
-        
-        setIsDrawer(isPlayer1);
+        // Randomly assign drawer role
+        const isFirstPlayer = Math.random() > 0.5;
+        setIsDrawer(isFirstPlayer);
         
         const word = WORD_BANK[Math.floor(Math.random() * WORD_BANK.length)];
         setCurrentWord(word);
         
-        console.log('Game started! Is drawer:', isPlayer1, 'Word:', word);
+        console.log('Game started! Is drawer:', isFirstPlayer, 'Word:', word);
       };
 
       // Timer effect
@@ -228,7 +367,6 @@
           const canvas = canvasRef.current;
           const container = canvas.parentElement;
           
-          // Set canvas size based on container
           canvas.width = container.offsetWidth - 20;
           canvas.height = 400;
           
@@ -239,59 +377,6 @@
           console.log('Canvas initialized:', canvas.width, 'x', canvas.height);
         }
       }, [isInGame]);
-
-      // Listen for drawing updates from other player
-      useEffect(() => {
-        if (!isInGame || isDrawer) return;
-
-        const checkForUpdates = setInterval(() => {
-          const lastDrawing = window.localStorage.getItem(`drawing_${roomCode}`);
-          if (lastDrawing) {
-            const data = JSON.parse(lastDrawing);
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            
-            const ctx = canvas.getContext('2d');
-            
-            if (data.type === 'clear') {
-              ctx.fillStyle = '#FFFFFF';
-              ctx.fillRect(0, 0, canvas.width, canvas.height);
-            } else if (data.type === 'start') {
-              ctx.beginPath();
-              ctx.moveTo(data.x, data.y);
-            } else if (data.type === 'draw') {
-              ctx.strokeStyle = data.isEraser ? '#FFFFFF' : data.color;
-              ctx.lineWidth = data.isEraser ? data.size * 3 : data.size;
-              ctx.lineCap = 'round';
-              ctx.lineTo(data.x, data.y);
-              ctx.stroke();
-            }
-          }
-        }, 50);
-
-        return () => clearInterval(checkForUpdates);
-      }, [isInGame, isDrawer, roomCode]);
-
-      // Listen for role switches
-      useEffect(() => {
-        if (!isInGame) return;
-
-        const checkForSwitch = setInterval(() => {
-          const switchData = window.localStorage.getItem(`switch_${roomCode}`);
-          if (switchData) {
-            const data = JSON.parse(switchData);
-            if (Date.now() - data.timestamp < 1000) {
-              setIsDrawer(prev => !prev);
-              setCurrentWord(data.newWord);
-              clearCanvas();
-              setRoundTime(60);
-              setMessages([]);
-            }
-          }
-        }, 500);
-
-        return () => clearInterval(checkForSwitch);
-      }, [isInGame, roomCode]);
 
       if (!isInGame) {
         return (
@@ -453,8 +538,10 @@
                 {roundTime}s
               </div>
               <div>
-                <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Room</div>
-                <div style={{ fontWeight: '700', color: '#334155' }}>{roomCode}</div>
+                <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>Room: {roomCode}</div>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                  {connectedPlayers} player{connectedPlayers !== 1 ? 's' : ''}
+                </div>
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>
@@ -676,7 +763,7 @@
                           color: '#334155',
                           fontSize: '0.85rem'
                         }}>
-                          {msg.text}
+                          {msg.player}: {msg.text}
                         </span>
                       </div>
                     ))
