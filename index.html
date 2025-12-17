@@ -147,11 +147,41 @@
               return [...prev, { name: data.playerName, ready: false }];
             });
             
+            // If we're the host in lobby, broadcast that we're the host
+            if (gamePhase === 'lobby' && isHost) {
+              setTimeout(() => {
+                broadcastEvent('host-announcement', { 
+                  host: playerName,
+                  players: lobbyPlayers
+                });
+              }, 100);
+            }
+            
             // If we're already in lobby, send our info back
             if (gamePhase === 'lobby') {
               setTimeout(() => {
                 broadcastEvent('player-joined', { playerName });
               }, 100);
+            }
+          }
+        });
+
+        // Listen for host announcements
+        channelRef.current.bind('host-announcement', function(data) {
+          console.log('Host announcement received:', data);
+          if (data.host !== playerName) {
+            setIsHost(false);
+            // Update player list with host's view
+            if (data.players) {
+              setLobbyPlayers(prev => {
+                const merged = [...prev];
+                data.players.forEach(player => {
+                  if (!merged.find(p => p.name === player.name)) {
+                    merged.push(player);
+                  }
+                });
+                return merged;
+              });
             }
           }
         });
@@ -399,18 +429,22 @@
         
         console.log('Joining lobby...');
         
-        // Check if this is the first player (host)
-        const existingRoom = window.localStorage.getItem(`room_${roomCode}`);
-        if (!existingRoom) {
-          setIsHost(true);
-          window.localStorage.setItem(`room_${roomCode}`, JSON.stringify({
-            host: playerName,
-            created: Date.now()
-          }));
-        }
-        
+        // Check if this is a new room (no one has joined yet)
+        // We'll determine this by checking if we receive any lobby-state responses
+        setIsHost(false); // Default to not host
         setLobbyPlayers([{ name: playerName, ready: true }]);
         setGamePhase('lobby');
+        
+        // After a short delay, if no one else responded, we're the host
+        setTimeout(() => {
+          setLobbyPlayers(prev => {
+            if (prev.length === 1 && prev[0].name === playerName) {
+              console.log('No other players detected, I am the host');
+              setIsHost(true);
+            }
+            return prev;
+          });
+        }, 1000);
       };
 
       const startGame = () => {
