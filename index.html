@@ -146,6 +146,29 @@
               }
               return [...prev, { name: data.playerName, ready: false }];
             });
+            
+            // If we're already in lobby, send our info back
+            if (gamePhase === 'lobby') {
+              setTimeout(() => {
+                broadcastEvent('player-joined', { playerName });
+              }, 100);
+            }
+          }
+        });
+
+        // Listen for lobby state updates
+        channelRef.current.bind('lobby-state', function(data) {
+          console.log('Received lobby state:', data);
+          if (data.players) {
+            setLobbyPlayers(prev => {
+              const merged = [...prev];
+              data.players.forEach(player => {
+                if (!merged.find(p => p.name === player.name)) {
+                  merged.push(player);
+                }
+              });
+              return merged;
+            });
           }
         });
 
@@ -160,6 +183,16 @@
 
         // Broadcast that this player joined
         broadcastEvent('player-joined', { playerName });
+        
+        // If joining an existing lobby, request current state
+        if (gamePhase === 'lobby') {
+          setTimeout(() => {
+            broadcastEvent('lobby-state', { 
+              players: lobbyPlayers,
+              requestedBy: playerName 
+            });
+          }, 200);
+        }
 
         return () => {
           if (channelRef.current) {
@@ -211,12 +244,18 @@
           ctx.fillRect(0, 0, canvas.width, canvas.height);
         } else if (data.type === 'start') {
           ctx.beginPath();
-          ctx.moveTo(data.x, data.y);
+          // Scale coordinates based on canvas dimensions
+          const scaledX = (data.x / data.canvasWidth) * canvas.width;
+          const scaledY = (data.y / data.canvasHeight) * canvas.height;
+          ctx.moveTo(scaledX, scaledY);
         } else if (data.type === 'draw') {
+          // Scale coordinates based on canvas dimensions
+          const scaledX = (data.x / data.canvasWidth) * canvas.width;
+          const scaledY = (data.y / data.canvasHeight) * canvas.height;
           ctx.strokeStyle = data.isEraser ? '#FFFFFF' : data.color;
           ctx.lineWidth = data.isEraser ? data.size * 3 : data.size;
           ctx.lineCap = 'round';
-          ctx.lineTo(data.x, data.y);
+          ctx.lineTo(scaledX, scaledY);
           ctx.stroke();
         } else if (data.type === 'stop') {
           ctx.closePath();
@@ -240,7 +279,14 @@
         ctx.moveTo(x, y);
         setIsDrawing(true);
 
-        broadcastEvent('drawing', { type: 'start', x, y, playerName });
+        broadcastEvent('drawing', { 
+          type: 'start', 
+          x, 
+          y, 
+          canvasWidth: canvas.width,
+          canvasHeight: canvas.height,
+          playerName 
+        });
       };
 
       const draw = (e) => {
@@ -268,6 +314,8 @@
           color: currentColor, 
           size: brushSize, 
           isEraser,
+          canvasWidth: canvas.width,
+          canvasHeight: canvas.height,
           playerName 
         });
       };
